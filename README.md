@@ -25,7 +25,7 @@ O projeto é dividido em um **frontend (React)**, um **backend (Node.js/Express)
 
 Para um mergulho profundo na arquitetura, estrutura de arquivos, tecnologias e decisões de design, consulte a nossa documentação técnica completa:
 
-➡️ **[Documentação Técnica Detalhada (TECHNICAL_DOCUMENTATION.md)](./TECHNICAL_DOCUMENTATION.md)**
+➡️ **[Documentação Técnica (TECHNICAL_DOCUMENTATION.md)](./TECHNICAL_DOCUMENTATION.md)**
 
 ---
 
