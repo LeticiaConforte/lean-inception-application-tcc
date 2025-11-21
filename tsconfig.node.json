@@ -1,0 +1,53 @@
+{
+  "compilerOptions": {
+    // --- Opções Base ---
+    // Permite a interoperabilidade entre módulos CommonJS e ES Modules.
+    "esModuleInterop": true,
+    // Pula a verificação de tipos em arquivos de declaração (.d.ts) de bibliotecas.
+    "skipLibCheck": true,
+    // Define a versão do JavaScript que o TypeScript irá gerar. ES2022 é uma versão moderna.
+    "target": "ES2022",
+    // Permite que arquivos JavaScript (.js) sejam incluídos na compilação.
+    "allowJs": true,
+    // Permite a importação de arquivos .json como módulos.
+    "resolveJsonModule": true,
+    // Garante que cada arquivo seja tratado como um módulo, mesmo que não tenha imports/exports.
+    "moduleDetection": "force",
+    // Garante que cada arquivo possa ser transpilado de forma isolada.
+    "isolatedModules": true,
+
+    // --- Verificações de Qualidade de Código ---
+    "strict": true, // Habilita todas as checagens de tipo estritas do TypeScript.
+    "noUnusedLocals": true, // Reporta erro para variáveis locais não utilizadas.
+    "noUnusedParameters": true, // Reporta erro para parâmetros de função não utilizados.
+    "noFallthroughCasesInSwitch": true, // Reporta erro se um 'case' em um 'switch' não tiver 'break' ou 'return'.
+
+    // --- Resolução de Módulos ---
+    // Define o sistema de módulos a ser usado. 'ESNext' para a sintaxe mais recente.
+    "module": "ESNext",
+    // Estratégia de resolução de módulos. 'bundler' é a ideal para o Vite e outros bundlers modernos.
+    "moduleResolution": "bundler",
+    // Define a pasta base para a resolução de caminhos (paths).
+    "baseUrl": ".",
+    // Cria aliases para caminhos de importação.
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    // --- Configurações de Projeto Composto ---
+    // Habilita a compilação de projetos referenciados.
+    "composite": true,
+    // Arquivo para armazenar informações sobre a última compilação, para builds incrementais.
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    // Define o diretório de saída para os arquivos JavaScript compilados. 
+    // (No `tsconfig.app.json`, isso não é necessário, pois o Vite lida com a saída em memória no desenvolvimento).
+    "outDir": "dist"
+  },
+  // Especifica os arquivos e pastas que devem ser incluídos na compilação do lado do servidor.
+  "include": [
+    "vite.config.ts",
+    "src/api/**/*.ts",
+    "src/lib/db-server.ts",
+    "src/integrations/firebase/server.ts"
+  ]
+}

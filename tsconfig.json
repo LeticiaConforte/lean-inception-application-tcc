@@ -1,0 +1,17 @@
+{
+  // Este é um arquivo tsconfig.json de "solução".
+  // Ele é usado para gerenciar múltiplos projetos TypeScript dentro de um mesmo repositório.
+
+  // A propriedade "files" está vazia, pois os arquivos a serem compilados são definidos nos projetos referenciados.
+  "files": [],
+
+  // A propriedade "references" aponta para outros arquivos tsconfig.json no projeto.
+  // Isso permite que o compilador TypeScript construa múltiplos projetos de forma eficiente.
+  "references": [
+    // Referência para as configurações do TypeScript para o código da aplicação (que roda no navegador).
+    { "path": "./tsconfig.app.json" },
+
+    // Referência para as configurações do TypeScript para o código do ambiente Node.js (como scripts de build ou do lado do servidor).
+    { "path": "./tsconfig.node.json" }
+  ]
+}

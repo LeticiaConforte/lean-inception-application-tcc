@@ -1,0 +1,22 @@
+# Dependências
+/node_modules
+
+# Build
+/dist
+
+# Logs
+backend.log
+server.log
+nohup.out
+
+# Arquivos de ambiente
+.env
+.env.local
+
+# Chaves de serviço e configurações locais
+serviceAccountKey.json
+.firebase/
+
+# Outros
+.idx/
+bun.lockb

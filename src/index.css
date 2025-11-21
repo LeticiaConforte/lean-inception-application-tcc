@@ -1,0 +1,140 @@
+/* Importa as camadas principais do Tailwind: base, componentes e utilitários */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Primeira camada base onde são definidas variáveis globais de tema (CSS custom properties) */
+@layer base {
+  :root {
+    /* Cores principais do tema claro */
+    --background: 0 0% 100%; /* Cor de fundo padrão */
+    --foreground: 222.2 84% 4.9%; /* Cor do texto padrão */
+
+    /* Cores dos cartões */
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+
+    /* Cores do popover */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+
+    /* Paleta de cores primárias */
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+
+    /* Cores secundárias */
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    /* Cores para elementos suaves (muted) */
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    /* Cores de destaque */
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+
+    /* Cores para ações destrutivas */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Cores para bordas, inputs e anéis (focus ring) */
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+
+    /* Raio padrão de borda */
+    --radius: 0.5rem;
+
+    /* Variáveis específicas do sidebar (tema claro) */
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  /* Tema escuro: sobrescreve todas as variáveis com novas cores */
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+
+    /* Sidebar no tema escuro */
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+/* Segunda camada base para aplicação de utilitários globais */
+@layer base {
+  * {
+    /* Aplica a variável de borda definida acima em todos os elementos */
+    @apply border-border;
+  }
+
+  body {
+    /* Aplica as cores globais de fundo e texto ao body */
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Camada de componentes personalizados */
+@layer components {
+  /* Estilo para notas adesivas (sticky notes) utilizadas nos templates */
+  .sticky-note {
+    @apply relative bg-gradient-to-br shadow-lg rounded-lg p-8 cursor-pointer transform transition-all duration-200 hover:scale-105 hover:shadow-xl min-h-48 min-w-64;
+  }
+  
+  /* Detalhe visual no canto superior direito simulando dobra */
+  .sticky-note::before {
+    content: '';
+    @apply absolute top-0 right-0 w-4 h-4 bg-black bg-opacity-10 rounded-bl-lg;
+  }
+  
+  /* Grid visual no fundo do canvas (linhas quadriculadas) */
+  .canvas-grid {
+    background-image: 
+      linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  /* Cartão utilizado para apresentar workshops na página principal */
+  .workshop-card {
+    @apply bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1;
+  }
+}

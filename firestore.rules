@@ -1,0 +1,15 @@
+rules_version = '2';
+
+// Define o serviço como Cloud Firestore
+service cloud.firestore {
+  // Aplica as regras a todos os bancos de dados do projeto
+  match /databases/{database}/documents {
+    // A regra abaixo se aplica a todos os documentos em todas as coleções
+    match /{document=**} {
+      // Permite que qualquer usuário autenticado (logado) leia e escreva em qualquer documento.
+      // ATENÇÃO: Esta é uma regra muito permissiva. Em um ambiente de produção,
+      // você deve restringir o acesso para permitir que os usuários modifiquem apenas seus próprios dados.
+      allow read, write: if request.auth != null;
+    }
+  }
+}
