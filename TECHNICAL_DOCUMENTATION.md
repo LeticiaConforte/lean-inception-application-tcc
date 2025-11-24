@@ -1,6 +1,6 @@
 # Documentação Técnica: Lean Inception App
 
-## 1. Resumo Executivo
+## 1. Resumo
 
 Este documento oferece uma análise técnica exaustiva da "Lean Inception App". Ele é destinado a desenvolvedores, arquitetos e partes interessadas técnicas, fornecendo um mergulho profundo na arquitetura do sistema, decisões tecnológicas, padrões de design, protocolos de segurança e fluxos de dados.
 
@@ -8,7 +8,7 @@ A aplicação é uma plataforma colaborativa projetada para facilitar workshops 
 
 ---
 
-## 2. Filosofia da Arquitetura
+## 2. Detalhes da Arquitetura
 
 A arquitetura foi projetada com base em quatro pilares principais:
 
@@ -17,7 +17,7 @@ A arquitetura foi projetada com base em quatro pilares principais:
 3.  **Segurança em Camadas (Defense in Depth):** A segurança é implementada em várias camadas: no cliente (validação de entrada), no backend (autenticação de token JWT e validação de permissões) e diretamente no banco de dados através das Regras de Segurança do Firestore.
 4.  **Real-Time First:** A colaboração em tempo real é um requisito central. A escolha do Firestore e o padrão de design da aplicação refletem essa prioridade, utilizando listeners `onSnapshot` para atualizações instantâneas da UI sem a necessidade de polling.
 
-### Diagrama Completo da Arquitetura
+### Diagrama da Arquitetura
 
 O diagrama abaixo ilustra a interação entre os componentes do sistema:
 
