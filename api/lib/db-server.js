@@ -1,3 +1,4 @@
+
 // Importa o módulo firebase-admin, utilizado para acessar serviços administrativos do Firebase (Auth, Firestore etc.)
 import admin from 'firebase-admin';
 // Importa módulo nativo do Node para manipulação de arquivos
@@ -90,6 +91,52 @@ try {
   }
 }
 
-// Exporta o objeto admin inicializado (ou não)
-export { admin, isFirebaseInitialized };
-// Exporta também a flag indicando se a inicialização teve sucesso
+// --- Funções de Banco de Dados (Firestore) ---
+
+// Obtém a instância do Firestore somente se a inicialização do Admin SDK teve sucesso.
+const db = isFirebaseInitialized ? admin.firestore() : null;
+
+/**
+ * Salva o histórico completo de uma sessão de chat no Firestore.
+ * O histórico é armazenado em um único documento para simplificar.
+ * @param {Array} history - O array contendo todos os objetos de mensagem do chat.
+ */
+const saveToHistory = async (history) => {
+  // Se o DB não estiver disponível, interrompe a função para evitar erros.
+  if (!db) {
+    console.warn('⚠️ Firestore is not available. Skipping saveToHistory.');
+    return;
+  }
+  // Define a referência para um documento específico.
+  // Usamos um ID fixo ('main_session') para sempre sobrescrever o mesmo histórico.
+  const historyRef = db.collection('chat-history').doc('main_session');
+  // Usa .set() para sobrescrever completamente o documento com o novo histórico.
+  await historyRef.set({ messages: history });
+};
+
+/**
+ * Recupera o histórico de chat do Firestore.
+ * @returns {Promise<Array>} - Uma promessa que resolve para o array de histórico, ou um array vazio.
+ */
+const getHistory = async () => {
+  // Se o DB não estiver disponível, retorna um histórico vazio.
+  if (!db) {
+    console.warn('⚠️ Firestore is not available. Skipping getHistory.');
+    return [];
+  }
+  // Define a referência para o mesmo documento onde o histórico é salvo.
+  const historyRef = db.collection('chat-history').doc('main_session');
+  // Obtém o snapshot do documento.
+  const doc = await historyRef.get();
+
+  // Se o documento não existir, retorna um array vazio.
+  if (!doc.exists) {
+    return [];
+  }
+  // Se o documento existir, retorna o array de 'messages' ou um array vazio se o campo não existir.
+  return doc.data().messages || [];
+};
+
+
+// Exporta o objeto admin inicializado, a flag e as novas funções
+export { admin, isFirebaseInitialized, saveToHistory, getHistory };

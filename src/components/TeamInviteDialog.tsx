@@ -85,7 +85,7 @@ export const TeamInviteDialog: React.FC<TeamInviteDialogProps> = ({
 
       try {
         // Busca dados do workspace. aqui foi usado 'workshops' em vez de 'workspaces'
-        const workspaceRef = doc(db, 'workshops', workspaceId)                                  // Referência ao documento do workspace
+        const workspaceRef = doc(db, 'workspaces', workspaceId)                                  // Referência ao documento do workspace
         const workspaceSnap = await getDoc(workspaceRef)                                        // Lê dados do Firestore
 
         if (workspaceSnap.exists()) {

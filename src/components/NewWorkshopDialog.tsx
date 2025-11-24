@@ -1,8 +1,8 @@
-import React, { useState } from 'react'                                             // React e estado local
-import { Button } from '@/components/ui/button'                                      // Botão UI
-import { Input } from '@/components/ui/input'                                        // Campo de texto
-import { Label } from '@/components/ui/label'                                        // Rótulo
-import { Textarea } from '@/components/ui/textarea'                                  // Campo multiline
+import React, { useState, useEffect } from 'react';                                             // React e estado local
+import { Button } from '@/components/ui/button';                                      // Botão UI
+import { Input } from '@/components/ui/input';                                        // Campo de texto
+import { Label } from '@/components/ui/label';                                        // Rótulo
+import { Textarea } from '@/components/ui/textarea';                                  // Campo multiline
 import {
   Dialog,                                                                              // Diálogo UI
   DialogContent,
@@ -10,19 +10,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle
-} from '@/components/ui/dialog'
-import { Plus } from 'lucide-react'                                                   // Ícone "+"
-import { db } from '@/integrations/firebase/client'                                   // Firestore client
-import { useAuth } from '@/components/AuthProvider'                                   // Autenticação
-import NameConflictDialog from '@/components/NameConflictDialog'                      // Diálogo de conflito de nome
-import { collection, query, where, getDocs } from 'firebase/firestore'               // Firestore ops
+} from '@/components/ui/dialog';
+import { Plus } from 'lucide-react';                                                   // Ícone "+"
+import { db } from '@/integrations/firebase/client';                                   // Firestore client
+import { useAuth } from '@/components/AuthProvider';                                   // Autenticação
+import NameConflictDialog from '@/components/NameConflictDialog';                      // Diálogo de conflito de nome
+import { collection, query, where, getDocs } from 'firebase/firestore';               // Firestore ops
 
 // Propriedades aceitas pelo diálogo de novo workshop
 interface NewWorkshopDialogProps {
-  isOpen: boolean                                                                      // Controle de abertura
-  onClose: () => void                                                                  // Fechar diálogo
-  onCreateWorkshop: (name: string, description: string, workspaceId: string | null) => void // Callback criação
-  workspaceId?: string | null                                                          // Workspace alvo
+  isOpen: boolean;                                                                    // Controle de abertura
+  onClose: () => void;                                                                  // Fechar diálogo
+  onCreateWorkshop: (name: string, description: string, workspaceId: string | null) => void; // Callback criação
+  workspaceId?: string | null;                                                          // Workspace alvo
 }
 
 // Componente principal
@@ -32,108 +32,119 @@ const NewWorkshopDialog: React.FC<NewWorkshopDialogProps> = ({
   onCreateWorkshop,
   workspaceId
 }) => {
-  const [workshopName, setWorkshopName] = useState('')                                 // Nome do workshop
-  const [description, setDescription] = useState('')                                   // Descrição opcional
-  const [loading, setLoading] = useState(false)                                        // Flag de carregamento
-  const [showConflictDialog, setShowConflictDialog] = useState(false)                  // Diálogo de conflito
-  const { user } = useAuth()                                                           // Usuário logado
+  const [workshopName, setWorkshopName] = useState('');                                 // Nome do workshop
+  const [description, setDescription] = useState('');                                   // Descrição opcional
+  const [loading, setLoading] = useState(false);                                        // Flag de carregamento
+  const [showConflictDialog, setShowConflictDialog] = useState(false);                  // Diálogo de conflito
+  const { user } = useAuth();                                                           // Usuário logado
+
+  // Limpa os campos do formulário quando o diálogo é fechado ou o workspaceId muda
+  useEffect(() => {
+    if (!isOpen) {
+      setWorkshopName('');
+      setDescription('');
+      setShowConflictDialog(false);
+    }
+  }, [isOpen, workspaceId]);
 
   // Verifica se workshop com esse nome já existe para o usuário e workspace
   const checkExistingWorkshop = async (workshopName: string) => {
-    if (!user) return false
+    if (!user) return false;
 
     try {
-      const workshopsRef = collection(db, 'workshops')                                 // Coleção workshops
+      const workshopsRef = collection(db, 'workshops');                                 // Coleção workshops
 
       // Query base: nome + criador
       let q = query(
         workshopsRef,
         where('name', '==', workshopName.trim()),
         where('created_by', '==', user.uid)
-      )
+      );
 
       // Se workspaceId existe, filtra por ele. Caso contrário, workspace é null
       if (workspaceId) {
-        q = query(q, where('workspace_id', '==', workspaceId))
+        q = query(q, where('workspace_id', '==', workspaceId));
       } else {
-        q = query(q, where('workspace_id', '==', null))
+        q = query(q, where('workspace_id', '==', null));
       }
 
-      const querySnapshot = await getDocs(q)                                           // Executa consulta
-      return !querySnapshot.empty                                                      // Se vazio → não existe
+      const querySnapshot = await getDocs(q);
+      return !querySnapshot.empty;
     } catch (error) {
-      console.error('Error checking workshop name:', error)
-      return false
+      console.error('Error checking workshop name:', error);
+      return false;
     }
-  }
+  };
 
   // Gera nome único ao detectar conflito: "Name Copy", "Name Copy 2", etc.
   const generateUniqueName = async (baseName: string): Promise<string> => {
-    let uniqueName = `${baseName} Copy`
-    let counter = 2
+    let uniqueName = `${baseName} Copy`;
+    let counter = 2;
 
     while (await checkExistingWorkshop(uniqueName)) {
-      uniqueName = `${baseName} Copy ${counter}`
-      counter++
+      uniqueName = `${baseName} Copy ${counter}`;
+      counter++;
     }
 
-    return uniqueName
-  }
+    return uniqueName;
+  };
 
   // Submissão do form
   const handleSubmit = async (e?: React.FormEvent, force = false) => {
-    if (e) e.preventDefault()
+    if (e) e.preventDefault();
 
-    if (!workshopName.trim()) return
+    if (!workshopName.trim()) return;
 
-    setLoading(true)
+    setLoading(true);
 
-    let finalName = workshopName.trim()
+    let finalName = workshopName.trim();
 
     // Verifica duplicidade caso não esteja forçando
     if (!force) {
-      const exists = await checkExistingWorkshop(finalName)
+      const exists = await checkExistingWorkshop(finalName);
       if (exists) {
-        setLoading(false)
-        setShowConflictDialog(true)
-        return
+        setLoading(false);
+        setShowConflictDialog(true);
+        return;
       }
     } else {
       // Se houve conflito, cria nome alternativo
-      finalName = await generateUniqueName(workshopName.trim())
-      setWorkshopName(finalName)
+      finalName = await generateUniqueName(workshopName.trim());
     }
 
     // Tenta criar o workshop
     try {
-      await onCreateWorkshop(finalName, description.trim(), workspaceId || null)
+      // Garante que o workspaceId seja passado corretamente
+      await onCreateWorkshop(finalName, description.trim(), workspaceId || null);
 
-      setWorkshopName('')                                                              // Limpa form
-      setDescription('')
-      setShowConflictDialog(false)
-      onClose()                                                                        // Fecha diálogo
+      // Limpa form e fecha diálogo apenas em caso de sucesso
+      setWorkshopName('');
+      setDescription('');
+      setShowConflictDialog(false);
+      onClose();
     } catch (error) {
-      console.error('Error creating workshop:', error)
+      console.error('Error creating workshop:', error);
+      // A notificação de erro pode ser adicionada aqui se necessário
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   // Confirmação ao detectar nome duplicado
   const handleConflictConfirm = () => {
-    setShowConflictDialog(false)
-    handleSubmit(undefined, true)                                                      // Força criação
-  }
+    setShowConflictDialog(false);
+    handleSubmit(undefined, true); // Força criação
+  };
 
   // Usuário cancelou o conflito
   const handleConflictCancel = () => {
-    setShowConflictDialog(false)
-  }
+    setShowConflictDialog(false);
+  };
 
   // Fecha diálogo somente se não estiver criando
   const handleClose = () => {
-    if (!loading) onClose()
-  }
+    if (!loading) onClose();
+  };
 
   return (
     <>
@@ -209,7 +220,7 @@ const NewWorkshopDialog: React.FC<NewWorkshopDialogProps> = ({
         type="workshop"
       />
     </>
-  )
-}
+  );
+};
 
-export default NewWorkshopDialog                                                      // Exporta componente
+export default NewWorkshopDialog;

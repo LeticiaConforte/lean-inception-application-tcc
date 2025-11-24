@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef } from 'react'; // Importa React e hooks para estado, efeitos colaterais e referências
-import { Button } from '@/components/ui/button'; // Botão reutilizável da UI
-import { db } from '@/integrations/firebase/client'; // Instância do Firestore configurada
-import { useToast } from '@/hooks/use-toast'; // Hook para exibir toasts de feedback
-import { useAuth } from '@/components/AuthProvider'; // Hook de autenticação do usuário
-import TemplateSidebar from './TemplateSidebar'; // Sidebar de navegação entre templates
-import Canvas from './Canvas'; // Área principal de edição do template
-import CommentsDialog from './CommentsDialog'; // Diálogo de comentários por template
-import WorkshopHeader from './WorkshopHeader'; // Cabeçalho com nome do workshop e ações
-import { Toaster } from '@/components/ui/toaster'; // Componente que renderiza os toasts na tela
+import React, { useState, useEffect, useRef } from 'react'; // Importa o React e os hooks useState, useEffect e useRef para gerenciar estado, efeitos colaterais e referências
+import { Button } from '@/components/ui/button'; // Importa o componente de botão reutilizável da UI
+import { db } from '@/integrations/firebase/client'; // Importa a instância do Firestore configurada para o projeto
+import { useToast } from '@/hooks/use-toast'; // Hook customizado para exibir notificações (toasts)
+import { useAuth } from '@/components/AuthProvider'; // Hook de contexto para acessar o usuário autenticado
+import TemplateSidebar from './TemplateSidebar'; // Componente da sidebar com a lista de etapas/templates
+import Canvas from './Canvas'; // Componente principal de edição/visualização do conteúdo do template
+import CommentsDialog from './CommentsDialog'; // Diálogo de comentários associados ao template
+import WorkshopHeader from './WorkshopHeader'; // Cabeçalho do workshop (nome, ações, salvar, etc.)
+import { Toaster } from '@/components/ui/toaster'; // Componente global responsável por renderizar os toasts
 import {
   doc,
   getDoc,
@@ -19,12 +19,12 @@ import {
   getDocs,
   writeBatch,
   updateDoc,
-} from 'firebase/firestore'; // Funções do Firestore para CRUD e consultas
-import { TeamInviteDialog } from './TeamInviteDialog'; // Diálogo para convite de membros do workspace
-import { WorkshopInviteDialog } from './WorkshopInviteDialog'; // Diálogo para convite de pessoas para o workshop
-import { AIAssistant } from './AIAssistant'; // Painel lateral com assistente de IA
-import { WorkshopVersionHistory } from './WorkshopVersionHistory'; // Histórico de versões das etapas
-import { generateWorkshopReport, WorkshopReport as PdfReport } from '@/utils/workshopPdf'; // Função utilitária para gerar PDF do workshop
+} from 'firebase/firestore'; // Funções do Firestore para CRUD de documentos, consultas, batch e timestamps
+import { TeamInviteDialog } from './TeamInviteDialog'; // Diálogo para convidar membros para o workspace
+import { WorkshopInviteDialog } from './WorkshopInviteDialog'; // Diálogo para convidar pessoas para o workshop via link/convite
+import { AIAssistant } from './AIAssistant'; // Componente do assistente de IA acoplado ao workshop
+import { WorkshopVersionHistory } from './WorkshopVersionHistory'; // Componente que exibe o histórico de versões do workshop
+import { generateWorkshopReport, WorkshopReport as PdfReport } from '@/utils/workshopPdf'; // Função utilitária que gera o PDF do workshop e tipo de dados esperado
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,156 +34,151 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'; // Componentes de diálogo de alerta para confirmação de ações
-import { RightSidebar } from './RightSidebar'; // Barra lateral direita com ações rápidas
-import { useDialog } from './ConversationDialog'; // Hook para abrir o chat de conversa geral
-import { defaultTemplates, DefaultTemplate } from '@/lib/defaultTemplates'; // Templates padrão usados ao criar um novo workshop ou preencher vazio
+} from '@/components/ui/alert-dialog'; // Componentes de UI para o diálogo de alerta (unsaved changes)
+import { RightSidebar } from './RightSidebar'; // Componente da sidebar direita com ações (AI, exportar, invites, etc.)
+import { useDialog } from './ConversationDialog'; // Hook para abrir o diálogo de conversa/IA global
+import { defaultTemplates, DefaultTemplate } from '@/lib/defaultTemplates'; // Templates padrão do workshop e tipo correspondente
 
-// Propriedades recebidas pelo componente principal WorkshopCanvas
+// Tipagem das props recebidas pelo componente WorkshopCanvas
 interface WorkshopCanvasProps {
-  onBack: () => void; // Função para voltar para a tela anterior
-  workshopId: string | null; // ID do workshop, ou null ao criar um novo
-  workspaceId: string | null; // ID do workspace associado, ou null para pessoal
-  workshopName?: string; // Nome opcional do workshop ao criar um novo
-  participants?: string[]; // Lista de e-mails dos participantes ao criar o workshop
+  onBack: () => void; // Função chamada quando o usuário quer voltar (sair do canvas)
+  workshopId: string | null; // ID do workshop existente. Se null, um novo será criado
+  workspaceId: string | null; // ID do workspace ao qual o workshop pertence ou null
+  workshopName?: string; // Nome inicial do workshop (para criação). Opcional
+  participants?: string[]; // Lista inicial de participantes do workshop
   createdBy: string; // ID do usuário criador do workshop
 }
 
-// Estrutura de cada template armazenado no Firestore
+// Tipagem da estrutura de um template no Firestore
 interface Template {
-  id: string; // ID do documento do template no Firestore
-  step_number: number; // Número da etapa dentro do fluxo da Lean Inception
-  template_name: string; // Nome do template. por exemplo 'Kickoff', 'Personas'
-  content: any; // Conteúdo específico dessa etapa (post-its, textos etc.)
-  is_locked: boolean; // Indica se a etapa está marcada como concluída. impede edição
+  id: string; // ID do documento do template
+  step_number: number; // Número da etapa no fluxo do Lean Inception
+  template_name: string; // Nome do template (ex: Product Vision, Personas, etc.)
+  content: any; // Conteúdo específico daquele template (post-its, textos, etc.)
+  is_locked: boolean; // Indica se a etapa está marcada como concluída (não editável)
   updated_at: any; // Data da última atualização do template
-  is_counted: boolean; // Indica se a etapa entra na contagem de progresso
+  is_counted: boolean; // Indica se essa etapa conta para o total de passos (exclui Agenda, Workshop Report, etc.)
 }
 
-// Estrutura principal do workshop no Firestore
+// Tipagem da estrutura de um workshop no Firestore
 interface Workshop {
-  id: string; // ID do documento do workshop
+  id: string; // ID do workshop
   name: string; // Nome do workshop
-  created_by: string; // UID do criador
-  workspace_id: string | null; // Workspace associado ou null para pessoal
-  is_public: boolean; // Indica se o workshop é público
-  share_token: string | null; // Token opcional para compartilhamento
-  participants: string[]; // Lista de e-mails autorizados a visualizar
-  status: string; // Estado do workshop. por exemplo 'in_progress' . 'completed'
+  created_by: string; // ID do usuário que criou o workshop
+  workspace_id: string | null; // ID do workspace associado ou null
+  is_public: boolean; // Se o workshop é público ou não
+  share_token: string | null; // Token usado para compartilhamento (link público) se houver
+  participants: string[]; // Lista de e-mails de participantes do workshop
+  status: string; // Status atual: in_progress, completed, etc.
   current_step: number; // Quantidade de etapas concluídas
-  total_steps: number; // Quantidade total de etapas contáveis
+  total_steps: number; // Quantidade total de etapas contadas
 }
 
-// Componente principal que orquestra toda a experiência da tela de workshop
+// Declaração do componente principal WorkshopCanvas como Function Component
 const WorkshopCanvas: React.FC<WorkshopCanvasProps> = ({
-  onBack, // Callback de navegação para a tela anterior
-  workshopId, // ID do workshop existente, ou null
-  workspaceId, // ID do workspace, ou null
-  workshopName = 'New Workshop', // Nome padrão caso não seja passado
-  participants = [], // Lista padrão vazia de participantes
-  createdBy, // ID do criador do workshop
+  onBack, // Função para retornar à tela anterior
+  workshopId, // ID do workshop existente (se houver)
+  workspaceId, // ID do workspace em que o workshop está
+  workshopName = 'New Workshop', // Nome padrão do workshop, caso não seja passado
+  participants = [], // Lista padrão de participantes, vazia por padrão
+  createdBy, // ID do usuário criador
 }) => {
-  const [workshop, setWorkshop] = useState<Workshop | null>(null); // Estado com os dados do workshop
-  const [templates, setTemplates] = useState<Template[]>([]); // Lista de templates do workshop
+  const [workshop, setWorkshop] = useState<Workshop | null>(null); // Estado com os dados do workshop atual carregado
+  const [templates, setTemplates] = useState<Template[]>([]); // Estado com a lista de templates (etapas) do workshop
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null); // Template atualmente selecionado para edição
-  const [loading, setLoading] = useState(true); // Indica se os dados ainda estão sendo carregados
-  const [saving, setSaving] = useState(false); // Indica se há operação de salvamento em andamento
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Controla se a sidebar de etapas está aberta
-  const [isCommentsOpen, setIsCommentsOpen] = useState(false); // Controla se o diálogo de comentários está aberto
-  const [isTeamInviteOpen, setIsTeamInviteOpen] = useState(false); // Controla se o diálogo de convite de workspace está aberto
-  const [isWorkshopInviteOpen, setIsWorkshopInviteOpen] = useState(false); // Controla se o diálogo de convite para o workshop está aberto
-  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false); // Controla se o painel de IA está aberto
-  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // Controla se o histórico de versões está aberto
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Marca se existem alterações não salvas no template atual
-  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false); // Controla se o diálogo de alerta de alterações não salvas está visível
-  const [nextNavigationAction, setNextNavigationAction] = useState<(() => void) | null>(null); // Armazena a navegação a ser executada após decidir salvar ou descartar
+  const [loading, setLoading] = useState(true); // Estado de carregamento do workshop e templates
+  const [saving, setSaving] = useState(false); // Estado indicando se uma operação de salvar está em andamento
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Controle de abertura/fechamento da sidebar de etapas
+  const [isCommentsOpen, setIsCommentsOpen] = useState(false); // Controle de abertura do diálogo de comentários
+  const [isTeamInviteOpen, setIsTeamInviteOpen] = useState(false); // Controle de abertura do diálogo para invites de time/workspace
+  const [isWorkshopInviteOpen, setIsWorkshopInviteOpen] = useState(false); // Controle de abertura do diálogo de invite específico do workshop
+  const [isAIAssistantOpen, setIsAIAssistantOpen] = useState(false); // Controle de abertura do assistente de IA
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false); // Controle de abertura do histórico de versões
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false); // Flag indicando se existem alterações não salvas no template selecionado
+  const [showUnsavedChangesDialog, setShowUnsavedChangesDialog] = useState(false); // Indica se o diálogo de "unsaved changes" deve ser exibido
+  const [nextNavigationAction, setNextNavigationAction] = useState<(() => void) | null>(null); // Armazena a ação que será executada após lidar com alterações não salvas
   const [isExporting, setIsExporting] = useState(false); // Indica se a exportação para PDF está em andamento
-  const [currentWorkspaceName, setCurrentWorkspaceName] = useState(''); // Nome do workspace atual, usado em convites
+  const [currentWorkspaceName, setCurrentWorkspaceName] = useState(''); // Nome do workspace atual, usado no TeamInviteDialog
 
-  const { toast } = useToast(); // Hook para exibir notificações
-  const { user } = useAuth(); // Usuário autenticado
-  const { openDialog } = useDialog(); // Função para abrir o chat geral
-  const workshopCreated = useRef(false); // Flag para garantir que um novo workshop seja criado apenas uma vez
+  const { toast } = useToast(); // Obtém a função para disparar toasts
+  const { user } = useAuth(); // Usuário autenticado atual
+  const { openDialog } = useDialog(); // Função para abrir o diálogo de chat/conversa global
+  const workshopCreated = useRef(false); // Ref para garantir que um novo workshop não seja criado múltiplas vezes
 
-  // Carrega o nome do workspace, se houver workspaceId
   useEffect(() => {
-    if (workspaceId) {
-      const fetchWorkspaceName = async () => {
+    if (workspaceId) { // Se houver workspaceId, buscamos o nome do workspace
+      const fetchWorkspaceName = async () => { // Função assíncrona para buscar o nome do workspace
         const workspaceRef = doc(db, 'workspaces', workspaceId); // Referência ao documento do workspace
         const workspaceSnap = await getDoc(workspaceRef); // Busca o documento no Firestore
-        if (workspaceSnap.exists()) {
-          setCurrentWorkspaceName(workspaceSnap.data().name); // Atualiza o nome do workspace a partir do Firestore
+        if (workspaceSnap.exists()) { // Se o documento existe
+          setCurrentWorkspaceName(workspaceSnap.data().name); // Atualiza o nome do workspace no estado
         }
       };
-      fetchWorkspaceName(); // Chama a função assíncrona
+      fetchWorkspaceName(); // Chama a função para carregar o nome do workspace
     }
-  }, [workspaceId]); // Roda novamente se o workspaceId mudar
+  }, [workspaceId]); // Reexecuta o efeito quando o workspaceId mudar
 
-  // Decide se vai carregar um workshop existente ou criar um novo
   useEffect(() => {
-    if (workshopId) {
-      fetchWorkshopAndTemplates(workshopId); // Carrega dados de um workshop existente
-    } else if (user && !workshopCreated.current) {
-      workshopCreated.current = true; // Garante que o createNewWorkshop seja chamado apenas uma vez
-      createNewWorkshop(); // Cria um novo workshop e seus templates padrão
+    if (workshopId) { // Se um workshopId foi fornecido, carregamos os dados do workshop existente
+      fetchWorkshopAndTemplates(workshopId); // Chama função assíncrona para carregar workshop e templates
+    } else if (user && !workshopCreated.current) { // Se não há workshopId, mas temos usuário autenticado e ainda não criamos um workshop
+      workshopCreated.current = true; // Marca que já criamos o workshop para não duplicar
+      createNewWorkshop(); // Cria um novo workshop com base nos templates padrão
     }
-  }, [workshopId, user]); // Roda quando mudar o ID ou o usuário
+  }, [workshopId, user]); // Reage a mudanças no workshopId ou no usuário
 
-  // Função para carregar workshop e seus templates a partir do Firestore
+  // Função que busca os dados do workshop e seus templates a partir do Firestore
   const fetchWorkshopAndTemplates = async (id: string) => {
-    setLoading(true); // Ativa loading enquanto busca dados
+    setLoading(true); // Ativa estado de loading
     try {
       const workshopRef = doc(db, 'workshops', id); // Referência ao documento do workshop
-      const workshopSnap = await getDoc(workshopRef); // Busca os dados do workshop
+      const workshopSnap = await getDoc(workshopRef); // Busca o workshop no Firestore
 
-      if (!workshopSnap.exists() || !user) {
-        // Se o workshop não existir ou não houver usuário logado, mostra erro e volta
-        toast({ title: "Error", description: "Workshop not found or access denied.", variant: "destructive" });
-        onBack();
-        return;
+      if (!workshopSnap.exists() || !user) { // Se o workshop não existir ou não houver usuário autenticado
+        toast({ title: "Error", description: "Workshop not found or access denied.", variant: "destructive" }); // Exibe erro
+        onBack(); // Volta para a tela anterior
+        return; // Encerra a função
       }
 
-      let workshopData = { id: workshopSnap.id, ...workshopSnap.data() } as Workshop; // Mapeia dados do documento para o tipo Workshop
+      let workshopData = { id: workshopSnap.id, ...workshopSnap.data() } as Workshop; // Monta objeto Workshop com id + dados do Firestore
 
-      // Verifica se o usuário tem permissão para ver o workshop
+      // Verifica se o usuário atual tem permissão para visualizar o workshop
       if (workshopData.created_by !== user.uid && !workshopData.participants?.includes(user.email || '') && !workshopData.is_public) {
-        toast({ title: "Access Denied", description: "You don't have permission to view this workshop.", variant: "destructive" });
-        onBack();
-        return;
+        toast({ title: "Access Denied", description: "You don't have permission to view this workshop.", variant: "destructive" }); // Exibe erro de acesso
+        onBack(); // Volta para tela anterior
+        return; // Encerra
       }
 
-      const templatesRef = collection(db, 'workshops', id, 'templates'); // Coleção de templates dentro do workshop
-      const q = query(templatesRef, orderBy('step_number')); // Ordena os templates pelo número da etapa
-      const templatesSnapshot = await getDocs(q); // Busca todos os templates ordenados
+      const templatesRef = collection(db, 'workshops', id, 'templates'); // Referência à subcoleção de templates do workshop
+      const q = query(templatesRef, orderBy('step_number')); // Monta query para ordenar templates por step_number
+      const templatesSnapshot = await getDocs(q); // Executa a query e obtém os templates
 
-      // Mapeia os documentos para o tipo Template, garantindo defaults para is_locked e is_counted
       let templatesData = templatesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        is_locked: doc.data().is_locked || false,
-        is_counted: doc.data().is_counted === undefined ? doc.data().template_name !== 'Agenda' : doc.data().is_counted,
-      }) as Template);
+        id: doc.id, // ID do template
+        ...doc.data(), // Dados do documento
+        is_locked: doc.data().is_locked || false, // Garante que is_locked tenha valor booleano (default false)
+        is_counted: doc.data().is_counted === undefined ? doc.data().template_name !== 'Agenda' : doc.data().is_counted, // Se is_counted não existir, considera todas exceto Agenda como contáveis
+      }) as Template); // Tipagem como Template
 
-      // Se não houver templates, cria a partir dos templates padrão
-      if (templatesData.length === 0) {
-        console.log("No templates found, creating from default...");
-        const batch = writeBatch(db); // Cria um batch para escrever em lote
-        templatesData = defaultTemplates.map((template: DefaultTemplate) => {
-          const newTemplateRef = doc(collection(db, 'workshops', id, 'templates')); // Gera um novo documento para cada template
-          batch.set(newTemplateRef, template); // Adiciona a operação de escrita ao batch
-          return { ...template, id: newTemplateRef.id, updated_at: new Date() }; // Retorna a versão em memória com ID
+      if (templatesData.length === 0) { // Se não há templates ainda para esse workshop
+        console.log("No templates found, creating from default..."); // Log informativo
+        const batch = writeBatch(db); // Cria batch para operações em lote
+        templatesData = defaultTemplates.map((template: DefaultTemplate) => { // Para cada template padrão
+          const newTemplateRef = doc(collection(db, 'workshops', id, 'templates')); // Cria referência para novo documento de template
+          batch.set(newTemplateRef, template); // Adiciona operação de criação ao batch
+          return { ...template, id: newTemplateRef.id, updated_at: new Date() }; // Retorna versão do template com id local e updated_at
         });
-        await batch.commit(); // Confirma todas as escritas em lote
+        await batch.commit(); // Confirma o batch e cria todos os templates de uma vez
       }
 
-      const countableTemplates = templatesData.filter(t => t.is_counted); // Filtra as etapas que contam para o progresso
-      const completedCount = countableTemplates.filter(t => t.is_locked).length; // Conta quantas etapas estão bloqueadas (concluídas)
-      const allStepsCompleted = countableTemplates.length > 0 && completedCount === countableTemplates.length; // Verifica se todas as etapas contáveis estão concluídas
-      const newStatus = allStepsCompleted ? 'completed' : 'in_progress'; // Define o novo status do workshop
+      const countableTemplates = templatesData.filter(t => t.is_counted); // Filtra apenas as etapas que contam para o progresso
+      const completedCount = countableTemplates.filter(t => t.is_locked).length; // Conta quantas dessas etapas já estão concluídas
+      const allStepsCompleted = countableTemplates.length > 0 && completedCount === countableTemplates.length; // Verifica se todas as etapas contáveis foram concluídas
+      const newStatus = allStepsCompleted ? 'completed' : 'in_progress'; // Define novo status do workshop com base nas etapas
 
-      // Atualiza o workshop no Firestore se status, total_steps ou current_step estiverem desatualizados
+      // Atualiza status, total_steps e current_step no Firestore se estiverem desatualizados
       if (workshopData.status !== newStatus || workshopData.total_steps !== countableTemplates.length || workshopData.current_step !== completedCount) {
-        const workshopRefUpdate = doc(db, 'workshops', id); // Referência para atualização
+        const workshopRefUpdate = doc(db, 'workshops', id); // Referência ao workshop para update
         await updateDoc(workshopRefUpdate, {
           status: newStatus,
           total_steps: countableTemplates.length,
@@ -197,106 +192,106 @@ const WorkshopCanvas: React.FC<WorkshopCanvasProps> = ({
         };
       }
 
-      // Se todas as etapas estiverem concluídas e ainda não existir um template de Workshop Report, adiciona
+      // Se todas as etapas estiverem concluídas, adiciona um template "Workshop Report" caso ainda não exista
       if (allStepsCompleted && !templatesData.some(t => t.template_name === 'Workshop Report')) {
         templatesData.push({
-          id: 'workshop-report',
-          step_number: 14,
-          template_name: 'Workshop Report',
-          content: {},
-          is_locked: true,
-          is_counted: false,
-          updated_at: new Date(),
+          id: 'workshop-report', // ID fixo para o template de relatório (apenas na UI)
+          step_number: 14, // Step fixo para a posição do relatório
+          template_name: 'Workshop Report', // Nome do template
+          content: {}, // Conteúdo inicial vazio
+          is_locked: true, // Relatório é travado, não editável
+          is_counted: false, // Não conta como etapa
+          updated_at: new Date(), // Data local de criação
         });
-        templatesData.sort((a, b) => a.step_number - b.step_number); // Mantém a lista ordenada por step_number
+        templatesData.sort((a, b) => a.step_number - b.step_number); // Garante ordem pelo step_number
       } else if (!allStepsCompleted) {
-        // Se não estiver completo, garante que o Workshop Report não apareça na lista
+        // Se não estiver tudo completo, remove o template "Workshop Report" se existir
         templatesData = templatesData.filter(t => t.template_name !== 'Workshop Report');
       }
 
-      setWorkshop(workshopData); // Atualiza o estado do workshop
-      setTemplates(templatesData); // Atualiza a lista de templates
+      setWorkshop(workshopData); // Atualiza estado do workshop
+      setTemplates(templatesData); // Atualiza lista de templates
 
-      if (templatesData.length > 0) {
-        setSelectedTemplate(templatesData[0]); // Seleciona a primeira etapa como padrão
+      if (templatesData.length > 0) { // Se há templates
+        setSelectedTemplate(templatesData[0]); // Seleciona o primeiro template da lista
       }
 
     } catch (error: any) {
-      console.error('Error fetching workshop:', error);
+      console.error('Error fetching workshop:', error); // Loga erro no console
       toast({
         title: "Error",
-        description: "Failed to load workshop data: " + error.message,
+        description: "Failed to load workshop data: " + error.message, // Mensagem detalhada do erro
         variant: "destructive",
       });
     } finally {
-      setLoading(false); // Desativa loading independente de sucesso ou erro
+      setLoading(false); // Desliga estado de loading independentemente de sucesso ou erro
     }
   };
 
-  // Cria um novo workshop com templates padrão
+  // Função responsável por criar um novo workshop com os templates padrão
   const createNewWorkshop = async () => {
-    if (!user) {
+    if (!user) { // Se não há usuário autenticado
       toast({
         title: "Authentication Error",
-        description: "You must be logged in to create a workshop.",
+        description: "You must be logged in to create a workshop.", // Mensagem informando a necessidade de login
         variant: "destructive",
       });
-      return;
+      return; // Encerra a função
     }
-    setLoading(true); // Ativa loading enquanto cria o workshop
+    setLoading(true); // Ativa loading
     try {
-      const countableTemplates = defaultTemplates.filter((t: DefaultTemplate) => t.is_counted); // Calcula quantas etapas contam para o progresso
-      const newWorkshopRef = await addDoc(collection(db, 'workshops'), {
-        name: workshopName,
-        created_by: createdBy,
-        workspace_id: workspaceId,
-        participants: participants,
-        is_public: false,
-        share_token: null,
-        created_at: serverTimestamp(),
-        updated_at: serverTimestamp(),
-        status: 'in_progress',
-        current_step: 0,
-        total_steps: countableTemplates.length,
+      const countableTemplates = defaultTemplates.filter((t: DefaultTemplate) => t.is_counted); // Lista de templates contáveis
+      const newWorkshopRef = await addDoc(collection(db, 'workshops'), { // Cria novo documento de workshop no Firestore
+        name: workshopName, // Nome do workshop
+        created_by: createdBy, // ID do criador
+        workspace_id: workspaceId, // Workspace associado
+        participants: participants, // Participantes iniciais
+        is_public: false, // Começa como não público
+        share_token: null, // Sem token de compartilhamento inicial
+        created_at: serverTimestamp(), // Timestamp de criação gerado pelo servidor
+        updated_at: serverTimestamp(), // Timestamp de atualização
+        status: 'in_progress', // Status inicial em progresso
+        current_step: 0, // Nenhuma etapa concluída
+        total_steps: countableTemplates.length, // Número total de etapas contáveis
       });
 
-      const batch = writeBatch(db); // Batch para salvar todos os templates em lote
-      const newTemplates = defaultTemplates.map((template: DefaultTemplate) => {
-        const newTemplateRef = doc(collection(db, 'workshops', newWorkshopRef.id, 'templates')); // Documento individual de template
-        batch.set(newTemplateRef, template); // Adiciona ao batch
-        return { id: newTemplateRef.id, ...template, updated_at: new Date() }; // Versão em memória do template
+      const batch = writeBatch(db); // Cria um batch para criar todos os templates
+      const newTemplates = defaultTemplates.map((template: DefaultTemplate) => { // Itera sobre templates padrão
+        const newTemplateRef = doc(collection(db, 'workshops', newWorkshopRef.id, 'templates')); // Referência para cada template dentro do novo workshop
+        batch.set(newTemplateRef, template); // Adiciona criação do template no batch
+        return { id: newTemplateRef.id, ...template, updated_at: new Date() }; // Retorna template local com id e updated_at
       });
-      await batch.commit(); // Persiste todos os templates
+      await batch.commit(); // Executa o batch, criando todos os templates no Firestore
 
-      const newWorkshopDoc = await getDoc(newWorkshopRef); // Recarrega o documento do workshop recém criado
-      const newWorkshopData = { id: newWorkshopDoc.id, ...newWorkshopDoc.data() } as Workshop; // Mapeia para tipo Workshop
+      const newWorkshopDoc = await getDoc(newWorkshopRef); // Busca os dados atualizados do workshop recém-criado
+      const newWorkshopData = { id: newWorkshopDoc.id, ...newWorkshopDoc.data() } as Workshop; // Monta o objeto Workshop
 
-      setWorkshop(newWorkshopData); // Armazena o workshop no estado
-      setTemplates(newTemplates); // Armazena os templates padrão com IDs
-      setSelectedTemplate(newTemplates[0]); // Seleciona a primeira etapa
+      setWorkshop(newWorkshopData); // Atualiza estado do workshop
+      setTemplates(newTemplates); // Atualiza lista de templates
+      setSelectedTemplate(newTemplates[0]); // Seleciona o primeiro template
 
       toast({
         title: "Workshop Created",
-        description: `Successfully created "${workshopName}".`,
+        description: `Successfully created "${workshopName}".`, // Mensagem de sucesso com o nome do workshop
       });
     } catch (error: any) {
-      console.error('Error creating workshop:', error);
+      console.error('Error creating workshop:', error); // Loga erro no console
       toast({
         title: "Error",
-        description: "Failed to create new workshop: " + error.message,
+        description: "Failed to create new workshop: " + error.message, // Mensagem detalhada do erro
         variant: "destructive",
       });
-      onBack(); // Em caso de falha, volta para tela anterior
+      onBack(); // Volta para tela anterior em caso de erro
     } finally {
       setLoading(false); // Desativa loading
     }
   };
 
-  // Salva alterações do template atual no Firestore
+  // Função que salva o conteúdo do template selecionado
   const handleSave = async () => {
-    if (!workshop || !selectedTemplate) return;
+    if (!workshop || !selectedTemplate) return; // Se não há workshop ou template selecionado, não faz nada
     
-    setSaving(true); // Indica que o salvamento está em andamento
+    setSaving(true); // Ativa estado de salvamento
     try {
       const templateRef = doc(
         db,
@@ -304,245 +299,244 @@ const WorkshopCanvas: React.FC<WorkshopCanvasProps> = ({
         workshop.id,
         'templates',
         selectedTemplate.id,
-      ); // Referência ao template atual
+      ); // Referência ao template selecionado no Firestore
       await updateDoc(templateRef, {
-        content: selectedTemplate.content,
-        updated_at: serverTimestamp(),
-      }); // Atualiza o conteúdo e a data de atualização
+        content: selectedTemplate.content, // Atualiza o conteúdo do template
+        updated_at: serverTimestamp(), // Atualiza data de modificação
+      });
 
-      const workshopRef = doc(db, 'workshops', workshop.id); // Referência ao workshop
-      await updateDoc(workshopRef, { updated_at: serverTimestamp() }); // Atualiza a data de atualização do workshop
-      
-      const updatedTemplates = templates.map(t => (t.id === selectedTemplate.id ? selectedTemplate : t)); // Atualiza o template na lista em memória
-      setTemplates(updatedTemplates); // Atualiza estado com a nova lista
+      const workshopRef = doc(db, 'workshops', workshop.id); // Referência ao workshop no Firestore
+      await updateDoc(workshopRef, { updated_at: serverTimestamp() }); // Atualiza a data de modificação do workshop
 
-      setHasUnsavedChanges(false); // Marca que não há mais alterações pendentes
+      const updatedTemplates = templates.map(t => (t.id === selectedTemplate.id ? selectedTemplate : t)); // Substitui o template atualizado na lista local
+      setTemplates(updatedTemplates); // Atualiza lista de templates
+
+      setHasUnsavedChanges(false); // Marca que não há mais alterações não salvas
 
       toast({
         title: "Saved!",
-        description: `Your changes to "${selectedTemplate.template_name}" have been saved.`,
+        description: `Your changes to "${selectedTemplate.template_name}" have been saved.`, // Mensagem informando que as alterações foram salvas
       });
     } catch (error: any) {
-      console.error('Error saving workshop:', error);
+      console.error('Error saving workshop:', error); // Loga erro
       toast({
         title: "Error",
-        description: "Failed to save changes.",
+        description: "Failed to save changes.", // Mensagem genérica de erro ao salvar
         variant: "destructive",
       });
     } finally {
-      setSaving(false); // Conclui o salvamento
+      setSaving(false); // Finaliza o estado de salvamento
     }
   };
 
-  // Renomeia o workshop no Firestore
+  // Função para renomear o workshop
   const handleRenameWorkshop = async (newName: string) => {
-    if (!workshop) return;
-    const workshopRef = doc(db, 'workshops', workshop.id); // Referência ao workshop
+    if (!workshop) return; // Se não há workshop carregado, não faz nada
+    const workshopRef = doc(db, 'workshops', workshop.id); // Referência ao documento do workshop
     try {
-      await updateDoc(workshopRef, { name: newName }); // Atualiza o nome
-      setWorkshop({ ...workshop, name: newName }); // Atualiza o estado local
-      toast({ title: 'Renamed', description: 'Workshop has been renamed.' });
+      await updateDoc(workshopRef, { name: newName }); // Atualiza o nome no Firestore
+      setWorkshop({ ...workshop, name: newName }); // Atualiza estado local com o novo nome
+      toast({ title: 'Renamed', description: 'Workshop has been renamed.' }); // Exibe toast de sucesso
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Could not rename workshop.',
+        description: 'Could not rename workshop.', // Mensagem de erro ao renomear
         variant: 'destructive',
       });
     }
   };
 
-  // Marca ou desmarca a etapa atual como concluída
+  // Função que marca/desmarca o template selecionado como completo
   const handleMarkComplete = async () => {
-    if (!selectedTemplate || !workshop || hasUnsavedChanges) {
-      // Se tiver alterações não salvas, avisa o usuário
-      if (hasUnsavedChanges) {
+    if (!selectedTemplate || !workshop || hasUnsavedChanges) { // Verifica se há template, workshop e ausência de alterações não salvas
+      if (hasUnsavedChanges) { // Se houver alterações não salvas
         toast({
           title: "Unsaved Changes",
-          description: "Please save your changes before marking this step as complete.",
+          description: "Please save your changes before marking this step as complete.", // Pede para salvar antes de marcar como completo
           variant: "destructive",
         });
       }
-      return;
+      return; // Encerra a função
     }
 
-    // Agenda e Workshop Report não podem ser marcados como concluídos
+    // Agenda e Workshop Report não podem ser marcados como completos
     if (selectedTemplate.template_name === 'Agenda' || selectedTemplate.template_name === 'Workshop Report') {
       return;
     }
 
-    const newLockedState = !selectedTemplate.is_locked; // Inverte o estado bloqueado
-    const templateRef = doc(db, 'workshops', workshop.id, 'templates', selectedTemplate.id); // Referência ao template
+    const newLockedState = !selectedTemplate.is_locked; // Alterna o estado de is_locked (completo/aberto)
+    const templateRef = doc(db, 'workshops', workshop.id, 'templates', selectedTemplate.id); // Referência ao template no Firestore
 
     try {
-      await updateDoc(templateRef, { is_locked: newLockedState }); // Atualiza o campo is_locked
+      await updateDoc(templateRef, { is_locked: newLockedState }); // Atualiza o campo is_locked no Firestore
       
       const updatedTemplates = templates.map(t => 
         t.id === selectedTemplate.id ? { ...t, is_locked: newLockedState } : t
-      ); // Gera nova lista de templates com estado atualizado
-      setTemplates(updatedTemplates); // Atualiza estado global dos templates
+      ); // Atualiza a lista local com o novo estado is_locked
+      setTemplates(updatedTemplates); // Aplica a nova lista
 
-      const updatedSelectedTemplate = { ...selectedTemplate, is_locked: newLockedState }; // Atualiza o template selecionado
-      setSelectedTemplate(updatedSelectedTemplate); // Salva no estado
+      const updatedSelectedTemplate = { ...selectedTemplate, is_locked: newLockedState }; // Atualiza o template selecionado localmente
+      setSelectedTemplate(updatedSelectedTemplate); // Seta o template selecionado com o novo lock
 
-      // Recalcula progresso do workshop após marcar a etapa
-      const countableTemplates = updatedTemplates.filter(t => t.is_counted); // Etapas que contam
-      const completedCount = countableTemplates.filter(t => t.is_locked).length; // Quantidade concluída
-      const allStepsCompleted = countableTemplates.length > 0 && completedCount === countableTemplates.length; // Se todas foram concluídas
-      const newStatus = allStepsCompleted ? 'completed' : 'in_progress'; // Novo status
+      const countableTemplates = updatedTemplates.filter(t => t.is_counted); // Filtra templates contáveis
+      const completedCount = countableTemplates.filter(t => t.is_locked).length; // Conta quantos estão completos
+      const allStepsCompleted = countableTemplates.length > 0 && completedCount === countableTemplates.length; // Verifica se todas etapas contáveis foram concluídas
+      const newStatus = allStepsCompleted ? 'completed' : 'in_progress'; // Determina novo status do workshop
 
-      const workshopRefUpdate = doc(db, 'workshops', workshop.id); // Referência para atualizar workshop
+      const workshopRefUpdate = doc(db, 'workshops', workshop.id); // Referência ao workshop para update
       await updateDoc(workshopRefUpdate, {
         status: newStatus,
         current_step: completedCount
-      }); // Atualiza status e passo atual
+      }); // Atualiza status e current_step no Firestore
 
-      setWorkshop(prev => prev ? { ...prev, status: newStatus, current_step: completedCount } : null); // Atualiza estado do workshop
+      setWorkshop(prev => prev ? { ...prev, status: newStatus, current_step: completedCount } : null); // Atualiza estado do workshop localmente
 
-      // Adiciona ou remove o template de Workshop Report conforme a conclusão
+      // Se todas as etapas forem concluídas, adiciona o template de Workshop Report caso ainda não exista
       if (allStepsCompleted && !updatedTemplates.some(t => t.template_name === 'Workshop Report')) {
         const reportTemplate = {
-          id: 'workshop-report',
-          step_number: 14,
-          template_name: 'Workshop Report',
-          content: {},
-          is_locked: true,
-          is_counted: false,
-          updated_at: new Date(),
+          id: 'workshop-report', // ID fixo do template de relatório
+          step_number: 14, // Step fixo na sequência
+          template_name: 'Workshop Report', // Nome do template
+          content: {}, // Conteúdo inicial vazio
+          is_locked: true, // Travado (não editável)
+          is_counted: false, // Não contabiliza como etapa
+          updated_at: new Date(), // Data local
         };
-        const finalTemplates = [...updatedTemplates, reportTemplate].sort((a,b) => a.step_number - b.step_number); // Insere e ordena
-        setTemplates(finalTemplates);
+        const finalTemplates = [...updatedTemplates, reportTemplate].sort((a,b) => a.step_number - b.step_number); // Adiciona e ordena por step_number
+        setTemplates(finalTemplates); // Atualiza lista com o relatório
       } else if (!allStepsCompleted) {
-        setTemplates(updatedTemplates.filter(t => t.template_name !== 'Workshop Report')); // Remove caso volte a ficar incompleto
+        // Se não estiver tudo completo, remove o relatório se existir
+        setTemplates(updatedTemplates.filter(t => t.template_name !== 'Workshop Report'));
       }
 
       toast({
-        title: `Step ${newLockedState ? 'Completed' : 'Re-opened'}`,
-        description: `Step "${selectedTemplate.template_name}" has been ${newLockedState ? 'marked as complete' : 're-opened'}.`,
+        title: `Step ${newLockedState ? 'Completed' : 'Re-opened'}`, // Título adaptado conforme marcou ou reabriu
+        description: `Step "${selectedTemplate.template_name}" has been ${newLockedState ? 'marked as complete' : 're-opened'}.`, // Descrição informando a ação
       });
 
     } catch (error) {
-      console.error('Error updating template lock state:', error);
+      console.error('Error updating template lock state:', error); // Loga erro no console
       toast({
         title: 'Error',
-        description: 'Could not update step completion status.',
+        description: 'Could not update step completion status.', // Mensagem de erro ao atualizar status
         variant: 'destructive',
       });
     }
   };
 
-  // Atualiza o conteúdo do template atual em memória e marca que há alterações não salvas
+  // Atualiza o conteúdo do template a partir das mudanças feitas no Canvas
   const onTemplateChange = (newContent: any) => {
-    if (selectedTemplate && !selectedTemplate.is_locked) {
-      const originalTemplate = templates.find(t => t.id === selectedTemplate.id); // Template original para comparação
-      if (JSON.stringify(originalTemplate?.content) !== JSON.stringify(newContent)) {
-        setSelectedTemplate({ ...selectedTemplate, content: newContent }); // Atualiza conteúdo do template em edição
-        setHasUnsavedChanges(true); // Marca que existem mudanças ainda não persistidas
+    if (selectedTemplate && !selectedTemplate.is_locked) { // Só permite alteração se houver template selecionado e se não estiver travado
+      const originalTemplate = templates.find(t => t.id === selectedTemplate.id); // Recupera a versão original do template na lista
+      if (JSON.stringify(originalTemplate?.content) !== JSON.stringify(newContent)) { // Compara o conteúdo original com o novo (via JSON.stringify)
+        setSelectedTemplate({ ...selectedTemplate, content: newContent }); // Atualiza o template selecionado com o novo conteúdo
+        setHasUnsavedChanges(true); // Marca que existem alterações não salvas
       }
     }
   };
 
-  // Envolve ações de navegação para checar se há alterações não salvas
+  // Executa navegação (troca de template ou voltar) respeitando alterações não salvas
   const executeNavigation = (action: () => void) => {
-    if (hasUnsavedChanges) {
-      setNextNavigationAction(() => action); // Guarda a ação de navegação
-      setShowUnsavedChangesDialog(true); // Abre o diálogo de confirmação
+    if (hasUnsavedChanges) { // Se há alterações não salvas
+      setNextNavigationAction(() => action); // Armazena a ação a ser executada após resolver as alterações
+      setShowUnsavedChangesDialog(true); // Abre o diálogo perguntando se deseja salvar ou descartar
     } else {
-      action(); // Se não tiver alterações pendentes, navega direto
+      action(); // Se não há alterações, executa a ação imediatamente
     }
   };
 
-  // Troca o template selecionado, respeitando alerta de alterações não salvas
+  // Função chamada ao selecionar um template na sidebar
   const onSelectTemplate = (template: Template) => {
-    executeNavigation(() => {
-      setSelectedTemplate(template); // Atualiza o template selecionado
-      setHasUnsavedChanges(false); // Limpa flag de alterações pendentes
+    executeNavigation(() => { // Usa a função que garante tratamento de alterações não salvas
+      setSelectedTemplate(template); // Define o template selecionado
+      setHasUnsavedChanges(false); // Reseta flag de alterações não salvas
     });
   };
 
-  // Navega para o próximo template na lista
+  // Navega para o próximo template
   const handleNext = () => {
-    if (!selectedTemplate) return;
-    const currentIndex = templates.findIndex(t => t.id === selectedTemplate.id); // Posição atual
-    if (currentIndex < templates.length - 1) {
-      onSelectTemplate(templates[currentIndex + 1]); // Seleciona o próximo
+    if (!selectedTemplate) return; // Se não há template selecionado, não faz nada
+    const currentIndex = templates.findIndex(t => t.id === selectedTemplate.id); // Obtém o índice do template atual
+    if (currentIndex < templates.length - 1) { // Se não está no último template
+      onSelectTemplate(templates[currentIndex + 1]); // Seleciona o próximo template
     }
   };
 
   // Navega para o template anterior
   const handlePrev = () => {
-    if (!selectedTemplate) return;
-    const currentIndex = templates.findIndex(t => t.id === selectedTemplate.id); // Posição atual
-    if (currentIndex > 0) {
-      onSelectTemplate(templates[currentIndex - 1]); // Seleciona o anterior
+    if (!selectedTemplate) return; // Se não há template selecionado, não faz nada
+    const currentIndex = templates.findIndex(t => t.id === selectedTemplate.id); // Obtém o índice do template atual
+    if (currentIndex > 0) { // Se não está no primeiro template
+      onSelectTemplate(templates[currentIndex - 1]); // Seleciona o template anterior
     }
   };
   
-  // Volta para a tela anterior. mas verifica alterações não salvas
+  // Callback de "voltar" que considera se existem alterações não salvas
   const handleBackWithCheck = () => {
-    executeNavigation(onBack); // Usa a lógica centralizada de navegação
+    executeNavigation(onBack); // Usa executeNavigation para chamar onBack
   };
 
-  // Usuário escolhe salvar antes de continuar navegação
+  // Confirma salvar alterações e depois executa a navegação pendente
   const handleConfirmSave = async () => {
     await handleSave(); // Salva o template atual
-    if (nextNavigationAction) {
-      nextNavigationAction(); // Executa ação de navegação armazenada
+    if (nextNavigationAction) { // Se existe uma ação pendente de navegação
+      nextNavigationAction(); // Executa a ação
+    }
+    setShowUnsavedChangesDialog(false); // Fecha o diálogo
+    setNextNavigationAction(null); // Limpa a ação pendente
+  };
+  
+  // Descarta as alterações e executa a navegação pendente
+  const handleDiscardChanges = () => {
+    const originalTemplate = templates.find(t => t.id === selectedTemplate?.id); // Recupera a versão original do template
+    if (originalTemplate) {
+      setSelectedTemplate(originalTemplate); // Restaura o template selecionado para o original
+    }
+    setHasUnsavedChanges(false); // Marca que não há alterações não salvas
+    if (nextNavigationAction) { // Se existe ação pendente
+      nextNavigationAction(); // Executa a ação
     }
     setShowUnsavedChangesDialog(false); // Fecha o diálogo
     setNextNavigationAction(null); // Limpa ação pendente
   };
-  
-  // Usuário escolhe descartar mudanças e continuar navegando
-  const handleDiscardChanges = () => {
-    const originalTemplate = templates.find(t => t.id === selectedTemplate?.id); // Recupera template original da lista
-    if (originalTemplate) {
-      setSelectedTemplate(originalTemplate); // Restaura conteúdo original
-    }
-    setHasUnsavedChanges(false); // Limpa flag de alterações
-    if (nextNavigationAction) {
-      nextNavigationAction(); // Executa navegação armazenada
-    }
-    setShowUnsavedChangesDialog(false); // Fecha diálogo
-    setNextNavigationAction(null); // Limpa referência da ação
-  };
 
-  // Exporta o workshop para um PDF usando generateWorkshopReport
+  // Exporta o workshop para PDF usando generateWorkshopReport
   const handleExport = async () => {
-    if (!workshop) return;
-    if (isExporting) return; // Evita exportações concorrentes
+    if (!workshop) return; // Se não há workshop, não exporta
+    if (isExporting) return; // Evita chamadas concorrentes de export
 
-    setIsExporting(true); // Marca estado de exportação
-    toast({ title: 'Exporting Workshop', description: 'Generating PDF...' });
+    setIsExporting(true); // Marca que está exportando
+    toast({ title: 'Exporting Workshop', description: 'Generating PDF...' }); // Toast informando início da exportação
 
     try {
-      const filteredTemplates = templates.filter(t => t.template_name !== 'Workshop Report'); // Remove o template de relatório interno
+      const filteredTemplates = templates.filter(t => t.template_name !== 'Workshop Report'); // Remove template de relatório da lista exportada
       
       const reportData: PdfReport = {
         title: "Workshop Report", // Título do relatório
         workshop: workshop.name, // Nome do workshop
         templates: filteredTemplates.map(t => ({
-          name: t.template_name,
-          step: t.step_number,
-          content: t.content,
-        })), // Converte templates para estrutura usada pelo gerador de PDF
-        status: workshop.status, // Status atual (in progress ou completed)
-        steps: `${workshop.current_step} / ${workshop.total_steps}`, // Progresso formatado
-        generatedAt: new Date().toLocaleDateString('pt-BR'), // Data de geração em formato brasileiro
-        participants: workshop.participants, // Participantes do workshop
+          name: t.template_name, // Nome da etapa
+          step: t.step_number, // Número da etapa
+          content: t.content, // Conteúdo daquela etapa
+        })),
+        status: workshop.status, // Status atual do workshop
+        steps: `${workshop.current_step} / ${workshop.total_steps}`, // Progresso no formato "x / total"
+        generatedAt: new Date().toLocaleDateString('pt-BR'), // Data de geração formatada em pt-BR
+        participants: workshop.participants, // Lista de participantes
       };
 
       const pdf = generateWorkshopReport(reportData, {
-        brandName: "Lean Inception",
-      }); // Gera o PDF com branding
+        brandName: "Lean Inception", // Opções de branding para o PDF
+      });
 
-      pdf.save(`workshop-report-${workshop.name.replace(/\s+/g, '_').toLowerCase()}.pdf`); // Faz download do arquivo com nome amigável
+      pdf.save(`workshop-report-${workshop.name.replace(/\s+/g, '_').toLowerCase()}.pdf`); // Salva o PDF com nome baseado no workshop
 
-      toast({ title: 'Export Successful', description: 'PDF generated.' });
+      toast({ title: 'Export Successful', description: 'PDF generated.' }); // Toast de sucesso
     } catch (error: any) {
-      console.error(error);
+      console.error(error); // Loga erro
       toast({
         title: 'Export Failed',
-        description: error?.message ?? 'Unknown error',
+        description: error?.message ?? 'Unknown error', // Mensagem de erro da exportação
         variant: 'destructive',
       });
     } finally {
@@ -550,17 +544,17 @@ const WorkshopCanvas: React.FC<WorkshopCanvasProps> = ({
     }
   };
 
-  // Tela de loading. mostrada enquanto dados do workshop estão sendo carregados ou criados
+  // Renderização de tela de loading enquanto workshop e templates estão sendo carregados
   if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-100">
-        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-inception-blue"></div> {/* Spinner animado */}
-        <p className="ml-4 text-lg font-semibold">Loading Workshop...</p> {/* Mensagem de carregamento */}
+        <div className="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-inception-blue"></div> {/* Spinner de carregamento */}
+        <p className="ml-4 text-lg font-semibold">Loading Workshop...</p> {/* Texto informativo */}
       </div>
     );
   }
 
-  // Caso não consiga carregar workshop ou template selecionado, exibe mensagem de erro e botão para voltar
+  // Caso não seja possível carregar o workshop ou template selecionado
   if (!workshop || !selectedTemplate) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-100">
@@ -570,134 +564,133 @@ const WorkshopCanvas: React.FC<WorkshopCanvasProps> = ({
     );
   }
 
-  const selectedIndex = templates.findIndex(t => t.id === selectedTemplate?.id); // Índice do template atualmente selecionado na lista
+  const selectedIndex = templates.findIndex(t => t.id === selectedTemplate?.id); // Índice do template selecionado na lista de templates
 
-  // Estrutura principal da tela do workshop
   return (
     <div
-      id={`workshop-canvas-${workshop.id}`} // ID único para o container do workshop. útil para prints ou captura de tela
-      className="h-screen w-screen bg-gray-50 flex flex-col overflow-hidden" // Layout full screen com fundo cinza claro
+      id={`workshop-canvas-${workshop.id}`} // ID único para o container do canvas do workshop
+      className="h-screen w-screen bg-gray-50 flex flex-col overflow-hidden" // Layout de tela cheia com fundo e overflow controlado
     >
       <WorkshopHeader
-        workshopName={workshop.name} // Nome atual do workshop
-        templateName={selectedTemplate.template_name} // Nome da etapa atual
-        onBack={handleBackWithCheck} // Voltar com checagem de alterações não salvas
-        onSave={handleSave} // Ação para salvar alterações
-        saving={saving} // Indica se está salvando
-        hasUnsavedChanges={hasUnsavedChanges} // Informa se há alterações pendentes
-        isTemplateCompleted={selectedTemplate.is_locked} // Informa se a etapa está concluída
-        onRename={handleRenameWorkshop} // Callback para renomear workshop
-        onMarkComplete={handleMarkComplete} // Callback para marcar etapa como concluída ou reabrir
+        workshopName={workshop.name} // Nome do workshop exibido no header
+        templateName={selectedTemplate.template_name} // Nome do template atual
+        onBack={handleBackWithCheck} // Função de voltar com checagem de alterações não salvas
+        onSave={handleSave} // Função de salvar alterações
+        saving={saving} // Indica se está salvando (para mostrar loading no botão, por exemplo)
+        hasUnsavedChanges={hasUnsavedChanges} // Indica se há alterações não salvas
+        isTemplateCompleted={selectedTemplate.is_locked} // Indica se o template está concluído
+        onRename={handleRenameWorkshop} // Função para renomear workshop
+        onMarkComplete={handleMarkComplete} // Função para marcar etapa como completa ou reabrir
       />
 
-      <div className="flex-grow flex overflow-hidden"> {/* Área principal de conteúdo. ocupando todo o restante da tela */}
-        <main className="flex-1 bg-gray-50 overflow-y-auto"> {/* Coluna central com o Canvas e rolagem vertical */}
+      <div className="flex-grow flex overflow-hidden"> {/* Área principal com canvas e sidebar */}
+        <main className="flex-1 bg-gray-50 overflow-y-auto"> {/* Área central de edição do canvas */}
           <Canvas
-            template={selectedTemplate} // Template atual para renderização
-            templates={templates} // Lista completa de templates. usada por alguns templates como contexto
-            workshopName={workshop.name} // Nome do workshop. usado em alguns templates
-            participants={workshop.participants} // Lista de participantes. usada em templates como Kickoff ou Agenda
-            onTemplateChange={onTemplateChange} // Callback disparado quando conteúdo do template muda
-            onNext={handleNext} // Navega para a próxima etapa
-            onPrev={handlePrev} // Navega para a etapa anterior
+            template={selectedTemplate} // Template atual a ser exibido no canvas
+            templates={templates} // Lista completa de templates (para navegação interna)
+            workshopName={workshop.name} // Nome do workshop
+            participants={workshop.participants} // Lista de participantes (para exibição no canvas se necessário)
+            onTemplateChange={onTemplateChange} // Callback para alterações de conteúdo no template
+            onNext={handleNext} // Navegar para próximo template
+            onPrev={handlePrev} // Navegar para template anterior
             isFirst={selectedIndex === 0} // Indica se está na primeira etapa
             isLast={selectedIndex === templates.length - 1} // Indica se está na última etapa
-            onOpenComments={() => setIsCommentsOpen(true)} // Abre o diálogo de comentários
-            onGoToTemplate={() => {}} // Nesta versão não há navegação direta a partir do Canvas
+            onOpenComments={() => setIsCommentsOpen(true)} // Abre diálogo de comentários
+            onGoToTemplate={() => {}} // Placeholder para navegação direta a um template específico (não implementado aqui)
           />
         </main>
 
-        <div className="flex border-l border-gray-200"> {/* Barra lateral direita com botão de abrir sidebar e ações */}
+        <div className="flex border-l border-gray-200"> {/* Container da sidebar direita com divisória */}
           <RightSidebar
-            onOpenTeamInvite={() => setIsTeamInviteOpen(true)} // Abre diálogo para convidar membros do workspace
-            onOpenWorkshopInvite={() => setIsWorkshopInviteOpen(true)} // Abre diálogo para convidar pessoas para o workshop
-            onOpenAIAssistant={() => setIsAIAssistantOpen(true)} // Abre painel do assistente de IA
+            onOpenTeamInvite={() => setIsTeamInviteOpen(true)} // Abre diálogo de convite de time
+            onOpenWorkshopInvite={() => setIsWorkshopInviteOpen(true)} // Abre diálogo de convite de workshop
+            onOpenAIAssistant={() => setIsAIAssistantOpen(true)} // Abre assistente de IA
             onOpenHistory={() => setIsHistoryOpen(true)} // Abre histórico de versões
-            onOpenChat={openDialog} // Abre o chat geral de conversa
-            onOpenExport={handleExport} // Ação de exportar para PDF
-            isExporting={isExporting} // Indica se exportação está em andamento
-            isTeamInviteDisabled={!workspaceId} // Desabilita team invite quando não há workspace
-            isWorkshopReport={selectedTemplate.template_name === 'Workshop Report'} // Habilita botão de export apenas no relatório
+            onOpenChat={openDialog} // Abre diálogo de chat global
+            onOpenExport={handleExport} // Dispara ação de exportar PDF
+            isExporting={isExporting} // Indica se está exportando para controlar UI
+            isTeamInviteDisabled={true} // Desabilita opção de invite de time (por enquanto)
+            isWorkshopReport={selectedTemplate.template_name === 'Workshop Report'} // Indica se template atual é o relatório (para ajustar UI)
             isSidebarOpen={isSidebarOpen} // Estado atual da sidebar de etapas
-            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} // Alterna abertura da sidebar
+            onToggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} // Alterna abertura/fechamento da sidebar
           />
 
-          {isSidebarOpen && (
+          {isSidebarOpen && ( // Renderiza a sidebar de templates apenas se estiver aberta
             <aside className="bg-white w-64 p-4 flex flex-col overflow-y-auto transition-all duration-300"> {/* Sidebar com lista de etapas */}
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Steps</h2> {/* Título da lista de etapas */}
+                <h2 className="text-lg font-semibold">Steps</h2> {/* Título da seção de etapas */}
               </div>
               <TemplateSidebar
-                templates={templates} // Lista completa de templates
-                selectedTemplate={selectedTemplate} // Template atualmente selecionado
-                onSelectTemplate={onSelectTemplate} // Callback para trocar etapa
+                templates={templates} // Lista de templates
+                selectedTemplate={selectedTemplate} // Template selecionado atualmente
+                onSelectTemplate={onSelectTemplate} // Callback ao selecionar um template
               />
             </aside>
           )}
         </div>
       </div>
 
-      {selectedTemplate && workshop && (
+      {selectedTemplate && workshop && ( // Renderiza diálogo de comentários se houver template e workshop válidos
         <CommentsDialog
-          open={isCommentsOpen} // Controla abertura do diálogo de comentários
-          onOpenChange={setIsCommentsOpen} // Atualiza estado ao abrir ou fechar
+          open={isCommentsOpen} // Controle de abertura
+          onOpenChange={setIsCommentsOpen} // Callback para atualizar estado de abertura
           workshopId={workshop.id} // ID do workshop
-          templateId={selectedTemplate.id} // ID do template atual
-          templateName={selectedTemplate.template_name} // Nome da etapa atual
+          templateId={selectedTemplate.id} // ID do template
+          templateName={selectedTemplate.template_name} // Nome da etapa para exibição
         />
       )}
       
-      {workspaceId && (
+      {workspaceId && ( // Renderiza diálogo de convite ao time apenas se existir workspaceId
         <TeamInviteDialog
-          isOpen={isTeamInviteOpen} // Controla abertura do diálogo de convite de workspace
-          onClose={() => setIsTeamInviteOpen(false)} // Fecha diálogo
-          workspaceId={workspaceId} // ID do workspace atual
+          isOpen={isTeamInviteOpen} // Controle de abertura
+          onClose={() => setIsTeamInviteOpen(false)} // Função para fechar o diálogo
+          workspaceId={workspaceId} // ID do workspace
           workspaceName={currentWorkspaceName} // Nome do workspace atual
-          onMemberAdded={() => workshopId && fetchWorkshopAndTemplates(workshopId)} // Recarrega dados se um membro for adicionado
+          onMemberAdded={() => workshopId && fetchWorkshopAndTemplates(workshopId)} // Recarrega workshop/templates ao adicionar membro
         />
       )}
       
-      {workshop && (
+      {workshop && ( // Renderiza diálogo de convite ao workshop se houver workshop carregado
         <WorkshopInviteDialog
-          isOpen={isWorkshopInviteOpen} // Controla abertura do diálogo de convite ao workshop
-          onClose={() => setIsWorkshopInviteOpen(false)} // Fecha diálogo
-          workshopId={workshop.id} // ID do workshop atual
-          workshopName={workshop.name} // Nome do workshop atual
+          isOpen={isWorkshopInviteOpen} // Controle de abertura
+          onClose={() => setIsWorkshopInviteOpen(false)} // Fecha o diálogo
+          workshopId={workshop.id} // ID do workshop
+          workshopName={workshop.name} // Nome do workshop
         />
       )}
 
       <AIAssistant
-        open={isAIAssistantOpen} // Controla painel do assistente de IA
+        open={isAIAssistantOpen} // Controle de abertura do assistente de IA
         onOpenChange={setIsAIAssistantOpen} // Atualiza estado de abertura
-        workshopId={workshop.id} // Passa ID do workshop para contexto da IA
+        workshopId={workshop.id} // ID do workshop para contexto da IA
       />
       <WorkshopVersionHistory
-        open={isHistoryOpen} // Controla abertura do painel de histórico de versões
-        onOpenChange={setIsHistoryOpen} // Atualiza estado do histórico
-        workshopId={workshop.id} // ID do workshop. reservado para futuras consultas de versões
-        templateName={selectedTemplate?.template_name || ''} // Nome da etapa atual para exibição
+        open={isHistoryOpen} // Controle de abertura do histórico
+        onOpenChange={setIsHistoryOpen} // Atualiza estado de abertura
+        workshopId={workshop.id} // ID do workshop para buscar histórico
+        templateName={selectedTemplate?.template_name || ''} // Nome do template atual para contextualizar histórico
       />
       <AlertDialog
-        open={showUnsavedChangesDialog} // Controla diálogo de alerta de alterações não salvas
-        onOpenChange={setShowUnsavedChangesDialog} // Atualiza estado ao abrir ou fechar
+        open={showUnsavedChangesDialog} // Controla se o diálogo de alterações não salvas está aberto
+        onOpenChange={setShowUnsavedChangesDialog} // Atualiza estado de abertura
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>You have unsaved changes</AlertDialogTitle> {/* Título do alerta */}
+            <AlertDialogTitle>You have unsaved changes</AlertDialogTitle> {/* Título informando que há alterações não salvas */}
             <AlertDialogDescription>
-              Do you want to save your changes before proceeding?
-            </AlertDialogDescription> {/* Pergunta ao usuário o que fazer com as alterações */}
+              Do you want to save your changes before proceeding? {/* Pergunta se o usuário deseja salvar antes de prosseguir */}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setNextNavigationAction(null)}>Cancel</AlertDialogCancel> {/* Cancela navegação e fecha diálogo */}
-            <Button variant="outline" onClick={handleDiscardChanges}>Discard and Continue</Button> {/* Descarta mudanças e segue navegação */}
-            <AlertDialogAction onClick={handleConfirmSave}>Save and Continue</AlertDialogAction> {/* Salva e segue navegação */}
+            <AlertDialogCancel onClick={() => setNextNavigationAction(null)}>Cancel</AlertDialogCancel> {/* Cancela e não executa a navegação pendente */}
+            <Button variant="outline" onClick={handleDiscardChanges}>Discard and Continue</Button> {/* Descarta alterações e segue com a navegação */}
+            <AlertDialogAction onClick={handleConfirmSave}>Save and Continue</AlertDialogAction> {/* Salva e depois continua a navegação */}
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <Toaster /> {/* Componente global de toasts. deve ficar no final para renderizar notificações */}
+      <Toaster /> {/* Componente que renderiza os toasts na tela */}
     </div>
   );
 };
 
-export default WorkshopCanvas; // Exporta o componente para uso em outras partes da aplicação
+export default WorkshopCanvas; // Exporta o componente como default para uso em outras partes da aplicação
